@@ -30,3 +30,10 @@ for file in *.gz; do
         break
     fi
 done
+
+
+download_dataset "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE149683&format=file&file=GSE149683%5FFile%5FS5%2ECicero%5Fcoaccessibility%5Fscores%5Fby%5Fcell%5Ftype%2Ecsv%2Egz"  "./MscProjectDataAnalysis/data" "GSE149683_File_S5_Cicero_coaccessibility_sc
+ores_by_cell_type.csv.gz"
+
+
+download_dataset "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE149683&format=file" "./MscProjectDataAnalysis/data" "GSE149683_RAW.tar"
