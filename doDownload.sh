@@ -2,10 +2,10 @@ source downloadData.sh
 
 
 mkdir -p ./data
-download_dataset "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE217460&format=file&file=GSE217460%5F210322%5FTFAtlas%5Fdifferentiated%2Eh5ad%2Egz" "./data" "GSE217460_210322_TFAtlas_differentiated.h5ad.gz"
-download_dataset "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE217460&format=file&file=GSE217460%5F210322%5FTFAtlas%5Fdifferentiated%5Fraw%2Eh5ad%2Egz" "./data" "GSE217460_210322_TFAtlas_differentiated_raw.h5ad.gz"
-gunzip ./data/GSE217460_210322_TFAtlas_differentiated_raw.h5ad.gz
-gunzip ./data/GSE217460_210322_TFAtlas_differentiated.h5ad.gz
+download_dataset "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE217460&format=file&file=GSE217460%5F210322%5FTFAtlas%5Fdifferentiated%2Eh5ad%2Egz" "/data" "GSE217460_210322_TFAtlas_differentiated.h5ad.gz"
+download_dataset "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE217460&format=file&file=GSE217460%5F210322%5FTFAtlas%5Fdifferentiated%5Fraw%2Eh5ad%2Egz" "/data" "GSE217460_210322_TFAtlas_differentiated_raw.h5ad.gz"
+gunzip ~/data/GSE217460_210322_TFAtlas_differentiated_raw.h5ad.gz
+gunzip ~/data/GSE217460_210322_TFAtlas_differentiated.h5ad.gz
 
 
 mkdir -p ./data/SUESS

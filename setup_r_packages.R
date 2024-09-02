@@ -23,3 +23,6 @@ devtools::install_github(repo = "mojaveazure/loomR", ref = "develop")
 if (!requireNamespace("Seurat", quietly = TRUE)) {
   install.packages("Seurat")
 }
+
+if (!requireNamespace("remotes")) install.packages("remotes")
+remotes::install_github("GfellerLab/SuperCell")
