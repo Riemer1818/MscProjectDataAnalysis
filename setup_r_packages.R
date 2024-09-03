@@ -26,3 +26,18 @@ if (!requireNamespace("Seurat", quietly = TRUE)) {
 
 if (!requireNamespace("remotes")) install.packages("remotes")
 remotes::install_github("GfellerLab/SuperCell")
+
+install.packages("units")
+install.packages("Cairo")
+install.packages("ggrastr")
+install.packages("sf")
+install.packages("spdep")
+
+
+# devtools::install_github("cole-trapnell-lab/monocle3")
+
+# Install Cicero
+if (!requireNamespace("remotes", quietly = TRUE))
+    install.packages("remotes")
+remotes::install_github("cole-trapnell-lab/cicero-release", ref = "monocle3")
+
