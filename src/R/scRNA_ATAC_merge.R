@@ -7,7 +7,7 @@ library(hdf5r)
 library(biovizBase)
 library(Matrix)
 
-output_dir <- "~/data/output/"
+output_dir <- "./output/"
 
 # Load the Seurat object
 file_path <- "~/data/GSM4508930_cerebrum_filtered.seurat.RDS"
@@ -34,15 +34,17 @@ multiomic_data <- SCTransform(multiomic_data, assay = "RNA", verbose = FALSE, us
 # Run TF-IDF transformation for the peaks assay
 multiomic_data <- RunTFIDF(multiomic_data)
 
-# Find top features
-multiomic_data <- FindTopFeatures(multiomic_data, min.cutoff = "q0")
+# # Find top features
+# multiomic_data <- FindTopFeatures(multiomic_data, min.cutoff = "q0")
+# Find top features with a low min.cutoff
+multiomic_data <- FindTopFeatures(multiomic_data, min.cutoff = 0.01)
 
 # Run SVD for the peaks assay
 multiomic_data <- RunSVD(multiomic_data)
 
 # Perform PCA for RNA and LSI for peaks
 multiomic_data <- RunPCA(multiomic_data, assay = "RNA")
-multiomic_data <- RunLSI(multiomic_data, assay = "peaks")
+multiomic_data <- RunLSI(multiomic_data, assay = "peaks") # not sure if this ever run ? . the function doesn't exist in seurat4+
 
 # Find Transfer Anchors for Integration
 transfer_anchors <- FindTransferAnchors(
@@ -54,13 +56,40 @@ transfer_anchors <- FindTransferAnchors(
 
 # seems to find transfors anchors for the same object... so that's "positive" 17011 anchors.
 celltype.predictions <- TransferData(anchorset = transfer_anchors, refdata = multiomic_data@meta.data$cell_type,  weight.reduction = multiomic_data[["pca"]], dims = 1:30)
-multiomic_data <- AddMetaData(multiomic_data, metadata = celltype.predictions)
+# Define celltype.predictions
+
+# Convert predicted cell types to factors
+celltype.predictions$predicted.id <- as.factor(celltype.predictions$predicted.id)
+
+# Extract the predicted cell types as a vector
+predicted_cell_types <- celltype.predictions$predicted.id
+
+# Print the distribution of predicted cell types as a histogram using ggplot2
+p <- ggplot(data = celltype.predictions, aes(x = predicted.id)) +
+  geom_bar() +
+  xlab("Predicted Cell Types") +
+  ylab("Frequency") +
+  ggtitle("Distribution of Predicted Cell Types") +
+  theme_minimal()
 
 # Save the histogram plot
-hist(multiomic_data$prediction.score.max)
-file_name <- paste0(basename(file_path), "_histogram.png")
+file_name <- paste0(basename(file_path), "_celltype_histogram.png")
 output_path <- file.path(output_dir, file_name)
-ggsave(output_path, plot = last_plot(), width = 16, height = 12, dpi = 300)
+ggsave(output_path, plot = p, width = 16, height = 12, dpi = 300)
+
+# Plot the prediction score as a histogram
+prediction_score <- celltype.predictions$prediction.score.max
+histogram <- ggplot(data = celltype.predictions, aes(x = prediction_score)) +
+    geom_histogram(binwidth = 0.1, fill = "skyblue", color = "black") +
+    xlab("Prediction Score") +
+    ylab("Frequency") +
+    ggtitle("Distribution of Prediction Scores") +
+    theme_minimal()
+
+# Save the histogram plot
+file_name <- paste0(basename(file_path), "_prediction_score_histogram.png")
+output_path <- file.path(output_dir, file_name)
+ggsave(output_path, plot = histogram, width = 16, height = 12, dpi = 300)
 
 # filter on prediction score
 multiomic_data.filtered <- subset(multiomic_data, subset = prediction.score.max > 0.5)
@@ -76,6 +105,12 @@ p2 <- DimPlot(multiomic_data, group.by = "cell_type", label = TRUE, repel = TRUE
 file_name <- paste0(basename(file_path), "_combined_plot.png")
 output_path <- file.path(output_dir, file_name)
 ggsave(output_path, plot = CombinePlots(plots = list(p1, p2)), width = 16, height = 12, dpi = 300)
+
+# print some statistics about the filtered cells
+print(paste("Number of cells in the filtered dataset:", nrow(multiomic_data.filtered)))
+print(paste("Number of cells in the original dataset:", nrow(multiomic_data)))
+print(paste("distribution of total features in the filtered dataset:", summary(multiomic_data.filtered$nCount_RNA)))
+print(paste("distribution of total features in the original dataset:", summary(multiomic_data$nCount_RNA)))
 
 # now I want to do the co-embedding of the two datasets for a visual indication of the (dimension reduced) similarity between the two datasets.
 
