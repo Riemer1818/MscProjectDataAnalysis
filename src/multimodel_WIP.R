@@ -13,7 +13,7 @@ library(dplyr)
 library(SuperCell)
 
 
-file_path <- "~/data/GSM4508930_cerebrum_filtered.seurat.RDS"
+file_path <- "./data/GSM4508930_cerebrum_filtered.seurat.RDS"
 
 output_dir <- "./output/GSM4508930_cerebrum_filtered.seurat"
 
@@ -40,7 +40,7 @@ sc <- FindVariableFeatures(
   selection.method = "disp", # "vst" is default
   nfeatures = 1000,
   verbose=FALSE
-  )
+)
 
 hvg <- VariableFeatures(sc, verbose=FALSE)
 
@@ -68,8 +68,8 @@ sc.all.markers <-  FindAllMarkers(sc, only.pos = TRUE, min.pct = 0.25, logfc.thr
 
 # Top markers (select top markers of each cell line)
 sc.top.markers <- sc.all.markers %>%
-   group_by(cluster) %>%
-    slice_max(n = 2, order_by = avg_log2FC)
+  group_by(cluster) %>%
+  slice_max(n = 2, order_by = avg_log2FC)
 
 sc.top.markers
 
@@ -81,11 +81,21 @@ VlnPlot(sc, features = sc.top.markers$gene[c(seq(1, 9, 2), seq(2, 10, 2))], ncol
 gamma <- 10 # Graining level
 
 # Compute metacells using SuperCell package
-MC <- SCimplify(
-  X = GetAssayData(sc), # single-cell log-normalized gene expression data
-  genes.use = hvg, 
-  gamma = gamma,
-  n.pc = 10
+# the scaling is the issue here. 
+# MC <- SCimplify(
+#   X = GetAssayData(sc, assay = "RNA", layer = "data"), # single-cell log-normalized gene expression data
+#   genes.use = hvg, 
+#   gamma = 5,
+#   n.pc = 20
+# )
+
+# get the embedding
+pcal2 <-Embeddings(sc2, reduction = "pca_l2_harmony")
+
+MC <- SCimplify_from_embedding(
+  x = pcal2, # embedding
+  cell_annotation = sc2$cell_type
+  gamma = 20
 )
 
 DefaultAssay(sc) <- "RNA"
@@ -104,6 +114,46 @@ MC.peaks <- supercell_GE(
   groups = MC$membership
 )
 
+sc$MC_membership = MC$membership
+
+DimPlot(sc, group.by = "MC_membership") + theme(legend.position = "none")
+
+colnames(MC.peaks) = colnames(MC.ge) = paste0("MC_", seq_len(ncol(MC.ge)))
+
+mc_seu = CreateSeuratObject(counts = MC.ge, assay = "RNA", 
+                            meta.data = data.frame("celltype" = MC$cell_type,
+                                                   "purity" = MC$purity))
+
+mcp = CreateAssayObject(MC.peaks)
+
+mc_seu[["peaks"]] = mcp
+
+
+mc_seu <- NormalizeData(mc_seu)
+mc_seu <- FindVariableFeatures(mc_seu)
+mc_seu <- ScaleData(mc_seu, features = VariableFeatures(mc_seu))
+
+mc_seu <- RunPCA(mc_seu, npcs = 20)  # n.pc from your metadata
+mc_seu <- RunUMAP(mc_seu, dims = 1:20)
+
+DimPlot(mc_seu, group.by = "celltype")
+
+DefaultAssay(mc_seu) <- "peaks"
+print("Set default assay to peaks.")
+print("Normalizing peaks data...")
+mc_seu <- RunTFIDF(mc_seu) # I think this runs the LSI
+print("Done normalizing peaks data.")
+print("Finding top features...")
+mc_seu <- FindTopFeatures(mc_seu, min.cutoff = 0.01)
+print("Done finding top features.")
+print("Normalizing peaks data...")
+mc_seu <- NormalizeData(mc_seu)
+print("Done normalizing peaks data.")
+
+
+
+
+
 # # Alternatively, counts can be averaged (summed up) followed by a lognormalization step (this approach is used in the MetaCell and SEACell algorithms)
 # if(0){
 #   MC.counts <- supercell_GE(
@@ -111,7 +161,7 @@ MC.peaks <- supercell_GE(
 #     mode = "sum", # summing counts instead of the default averaging
 #     groups = MC$membership
 #   )
-  
+
 #   MC.ge <- Seurat::LogNormalize(MC.counts, verbose = FALSE)
 # }
 
@@ -137,7 +187,7 @@ method_purity <- c("max_proportion", "entropy")[1]
 MC$purity <- supercell_purity(
   clusters = sc@meta.data$cell_type,
   supercell_membership = MC$membership, 
-  method = method_purity
+  method = "max_proportion"
 )
 
 # Metacell purity distribution
@@ -160,6 +210,7 @@ supercell_plot(
   alpha = -pi/2,
   main = "Metacells colored by cell line assignment"
 )
+
 dev.copy(png, filename = paste0(output_dir, "/supercells_colored_by_cell_line_assignment.png"))
 dev.off()
 
@@ -202,39 +253,37 @@ colnames <- 1: length(unique(MC$membership))
 
 colnames(MC.ge) <- colnames
 colnames(MC.peaks) <- colnames
-# Assuming MC.ge is your gene expression matrix
-# Warning message:
-# In asMethod(object) :
-#   sparse->dense coercion: allocating vector of size 2.2 GiB
 
+# > typeof(MC.ge)
+# [1] "S4"
+# > typeof(MC.peaks)
+# [1] "S4"
 
+# class(MC.ge)
+# class(MC.peaks)
 
-print(typeof(MC.ge))
-print(typeof(MC.peaks))
+# this SHOULD be fast, because I am merely changing the internal representation of the data. It should no longer coerce to dense in the Seurat functions.
+# this is NOT fast
 
-print(class(MC.ge))
-print(class(MC.peaks))
+print("Converting gene expression matrix to dgCMatrix...")
+countsGe <- as.(MC.ge, "dgCMatrix")
+print("Converted gene expression matrix to dgCMatrix.")
 
-print(class(MC.ge))
-print(class(MC.peaks))
+print("Converting peaks matrix to dgCMatrix...")
+countsPeaks <- as.(MC.peaks, "dgCMatrix")
+print("Converted peaks matrix to dgCMatrix.")
 
-print(inherits(MC.ge, "dgCMatrix"))
-print(inherits(MC.peaks, "dgCMatrix"))
-
-# print("Converting gene expression matrix to dgCMatrix...")
-# countsGe <- as.(MC.ge, "dgCMatrix")
-# print("Converted gene expression matrix to dgCMatrix.")
-
-# print("Converting peaks matrix to dgCMatrix...")
-# countsPeaks <- as.(MC.peaks, "dgCMatrix")
-
-seurat_object <- CreateSeuratObject(counts = MC.ge)
+seurat_object <- CreateSeuratObject(counts = countsGe)
 print("Created Seurat object.")
 
+# will take a bit longer to run... 
+# Add chromatin assay (assuming MC.peaks is already formatted as a matrix or dgCMatrix)
+# THIS ONE is making dense for some reason? 
 
-mcs <- CreateAssayObject(counts = countsPeaks) 
-seurat_object[["peaks"]] <- mcs
+temp <- CreateAssayObject(counts = countsPeaks)
+seurat_object[["peaks"]] <- temp
 print("Added chromatin assay.")
+)
 
 # Check if the matrix within the Seurat object is still sparse
 is_sparse <- inherits(seurat_object[["peaks"]]@counts, "sparseMatrix")
@@ -244,7 +293,9 @@ print(paste("Is the 'peaks' assay stored as sparse matrix? ", is_sparse))
 # Warning message:
 # In asMethod(object) :
 #   sparse->dense coercion: allocating vector of size 66.8 GiB
-seurat_object[["peaks"]] <- CreateAssayObject(counts = MC.peaks)
+#   sparse->dense coercion: allocating vector of size 66.8 GiB
+MCD <- CreateAssayObject(counts = MC.peaks)
+seurat_object[["peaks"]] <- MCD
 print("Added chromatin assay.")
 
 # Adding metadata, assuming the metadata components like cell_type and supercell_size are vectors
@@ -292,25 +343,25 @@ print("Done scaling peaks data.")
 print("Done: making seurat object")
 
 
-# ## Integration of RNA and chromatin data
-# # Set RNA as the reference assay
-# reference <- seurat_object
-# DefaultAssay(reference) <- "RNA"
+## Integration of RNA and chromatin data
+# Set RNA as the reference assay
+reference <- seurat_object
+DefaultAssay(reference) <- "RNA"
 
-# # Set chromatin as the query assay
-# query <- seurat_object
-# DefaultAssay(query) <- "peaks"
+# Set chromatin as the query assay
+query <- seurat_object
+DefaultAssay(query) <- "peaks"
 
-# print("Finding transfer anchors...")
-# # Find transfer anchors between RNA and chromatin assays
-# transfer_anchors <- FindTransferAnchors(
-#   reference = reference, 
-#   query = query, 
-#   reduction = "cca", 
-#   dims = 1:20,   # Number of dimensions (1:20 for testing)
-# )
+print("Finding transfer anchors...")
+# Find transfer anchors between RNA and chromatin assays
+transfer_anchors <- FindTransferAnchors(
+  reference = reference, 
+  query = query, 
+  reduction = "cca", 
+  dims = 1:20,   # Number of dimensions (1:20 for testing)
+)
 
-# print("Transfer anchors found.")
+print("Transfer anchors found.")
 
 
 # ## [1] "Done: NormalizeData"

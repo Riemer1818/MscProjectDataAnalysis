@@ -44,7 +44,7 @@ multiomic_data <- RunSVD(multiomic_data)
 
 # Perform PCA for RNA and LSI for peaks
 multiomic_data <- RunPCA(multiomic_data, assay = "RNA")
-multiomic_data <- RunLSI(multiomic_data, assay = "peaks") # not sure if this ever run ? . the function doesn't exist in seurat4+
+# multiomic_data <- RunLSI(multiomic_data, assay = "peaks") # not sure if this ever run ? . the function doesn't exist in seurat4+
 
 # Find Transfer Anchors for Integration
 transfer_anchors <- FindTransferAnchors(
@@ -79,6 +79,7 @@ ggsave(output_path, plot = p, width = 16, height = 12, dpi = 300)
 
 # Plot the prediction score as a histogram
 prediction_score <- celltype.predictions$prediction.score.max
+
 histogram <- ggplot(data = celltype.predictions, aes(x = prediction_score)) +
     geom_histogram(binwidth = 0.1, fill = "skyblue", color = "black") +
     xlab("Prediction Score") +
@@ -92,10 +93,17 @@ output_path <- file.path(output_dir, file_name)
 ggsave(output_path, plot = histogram, width = 16, height = 12, dpi = 300)
 
 # filter on prediction score
-multiomic_data.filtered <- subset(multiomic_data, subset = prediction.score.max > 0.5)
-multiomic_data.filtered$predicted.id <- factor(multiomic_data.filtered$predicted.id, levels = levels(multiomic_data))  # to make the colors match
 
-p1 <- DimPlot(multiomic_data.filtered, group.by = "predicted.id", label = TRUE, repel = TRUE) + ggtitle("scATAC-seq cells") + 
+
+# // from here on it isn't correct anymore. I need to sort out the two different DimPlots. 
+
+# Subset the multiomic_data based on the prediction score
+
+predicted_cell_types.filtered <- subset(celltype.predictions, subset = prediction_score > 0.5)
+
+# multiomic_data.filtered$predicted.id <- factor(multiomic_data.filtered$predicted.id, levels = levels(multiomic_data))  # to make the colors match
+
+p1 <- DimPlot(predicted_cell_types.filtered, group.by = "predicted.id", label = TRUE, repel = TRUE) + ggtitle("scATAC-seq cells") + 
     NoLegend() + scale_colour_hue(drop = FALSE)
 
 p2 <- DimPlot(multiomic_data, group.by = "cell_type", label = TRUE, repel = TRUE) + ggtitle("scRNA-seq cells") + 
@@ -107,12 +115,27 @@ output_path <- file.path(output_dir, file_name)
 ggsave(output_path, plot = CombinePlots(plots = list(p1, p2)), width = 16, height = 12, dpi = 300)
 
 # print some statistics about the filtered cells
-print(paste("Number of cells in the filtered dataset:", nrow(multiomic_data.filtered)))
-print(paste("Number of cells in the original dataset:", nrow(multiomic_data)))
-print(paste("distribution of total features in the filtered dataset:", summary(multiomic_data.filtered$nCount_RNA)))
+print(paste("Number of cells in the filtered dataset:", nrow(predicted_cell_types.filtered))) #4799
+print(paste("Number of cells in the original dataset:", ncol(multiomic_data))) # should just be 5K
+# they got transposed for some reason. 
+
+# not sure what nCounts_RNA is supposed to do tbh.
+print(paste("distribution of total features in the filtered dataset:", summary(predicted_cell_types.filtered$nCount_RNA))) # this don't work 
 print(paste("distribution of total features in the original dataset:", summary(multiomic_data$nCount_RNA)))
 
-# now I want to do the co-embedding of the two datasets for a visual indication of the (dimension reduced) similarity between the two datasets.
+
+# > summary(predicted_cell_types.filtered)
+#                       predicted.id  prediction.score.Astrocytes
+#                       Excitatory neurons         :2713   Min.   :0.000000           
+#                       Inhibitory neurons         : 658   1st Qu.:0.000000           
+#                       Cerebrum_Unknown.3         : 500   Median :0.000000           
+#                       Astrocytes                 : 375   Mean   :0.076394           
+#                       Astrocytes/Oligodendrocytes: 253   3rd Qu.:0.009367           
+#                       SKOR2_NPSR1 positive cells : 125   Max.   :0.988568           
+#                       (Other)                    : 175        
+
+
+# # now I want to do the co-embedding of the two datasets for a visual indication of the (dimension reduced) similarity between the two datasets.
 
 # # all the RNA cells that have a prediction score > 0.5
 # multiomic_data.filtered 

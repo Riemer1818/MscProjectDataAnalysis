@@ -31,9 +31,12 @@ for file in *.gz; do
     fi
 done
 
-
-download_dataset "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE149683&format=file&file=GSE149683%5FFile%5FS5%2ECicero%5Fcoaccessibility%5Fscores%5Fby%5Fcell%5Ftype%2Ecsv%2Egz"  "./MscProjectDataAnalysis/data" "GSE149683_File_S5_Cicero_coaccessibility_sc
-ores_by_cell_type.csv.gz"
-
-
+# A human cell atlas of fetal chromatin accessibility Domcke
+# ATAC-seq data and RNA-seq data
 download_dataset "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE149683&format=file" "./MscProjectDataAnalysis/data" "GSE149683_RAW.tar"
+# Chromatin accessibility data
+download_dataset "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE149683&format=file&file=GSE149683%5FFile%5FS5%2ECicero%5Fcoaccessibility%5Fscores%5Fby%5Fcell%5Ftype%2Ecsv%2Egz"  "./RIEMERPI001/data" "GSE149683_File_S5_Cicero_coaccessibility_scores_by_cell_type.csv.gz"
+
+# a human cell atlas CAO
+
+download_dataset "https://www.ncbi.nlm.nih.gov/geo/download/?acc=GSE156793&format=file&file=GSE156793%5FS3%5Fgene%5Fcount%2Eloom%2Egz" "./RIEMERPI001/data" "GSE156793_S3_gene_count.loom.gz"
