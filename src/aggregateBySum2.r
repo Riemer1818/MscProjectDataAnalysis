@@ -8,17 +8,17 @@ library(biovizBase)
 library(dplyr)
 library(SuperCell)
 
+# Output directory for saving metacell Seurat object
+output_dir <- file.path("~/data/filtered_seurats")
 
-output_dir <- file.path("~/data/filtered_seurats/MC3")
-
-# Retrieve file path from system argument
+# Retrieve file path from system argument or uncomment to test directly
 file_path <- commandArgs(trailingOnly = TRUE)[1]
 # file_path <- "data/filtered_seurats/GSM4508928_adrenal_filtered.seurat.RDS"
 
 # Extract the basename of the file without extension
 input_file_base <- tools::file_path_sans_ext(basename(file_path))
 
-# Create the output directory based on the basename + "MC"
+# Check if the output directory exists, create if not
 if (!dir.exists(output_dir)) {
     cat("Creating output directory:", output_dir, "\n")
     dir.create(output_dir, recursive = TRUE)
@@ -47,11 +47,14 @@ sc <- FindNeighbors(sc, dims = 1:10)
 sc <- FindClusters(sc, resolution = 0.05)
 
 # Reassign identities and sort levels
-Idents(sc) <- "cell_type" 
-levels(sc) <- sort(levels(sc))
+if ("cell_type" %in% colnames(sc@meta.data)) {
+    Idents(sc) <- "cell_type"
+} else {
+    cat("Warning: 'cell_type' column not found in metadata. Skipping identity reassignment.\n")
+}
 
 # Get PCA embedding and perform metacell construction
-pcal2 <- Embeddings(sc, reduction = "pca.l2.harmony")
+pcal2 <- Embeddings(sc, reduction = "pca")  # Ensure 'pca' exists
 
 MC <- SCimplify_from_embedding(
   X = pcal2, 
@@ -70,7 +73,7 @@ colnames(MC.ge) <- paste0("MC_", seq_len(length(unique(MC$membership))))
 mc_seu <- CreateSeuratObject(counts = MC.ge, assay = "RNA")
 
 # Annotate cell types
-celltypes <- MC$SC.cell.annotation.
+celltypes <- MC$SC.cell.annotation
 names(celltypes) <- paste0("MC_", names(celltypes))
 mc_seu$celltype <- celltypes[colnames(mc_seu)]
 
@@ -93,4 +96,5 @@ tryCatch({
     cat("Error during saveRDS:", e$message, "\n")
 })
 
-quit(save = "no")
+# End the script
+# quit(save = "no")
