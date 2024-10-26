@@ -1,8 +1,11 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
 import h5py
+import torch.nn as nn
+import torch.optim as optim
+import os
+import json
 
-# Define a custom dataset for loading and normalizing the HDF5 data
 class H5Dataset(Dataset):
     def __init__(self, gene_matrix_path, motif_matrix_path, transform=None):
         super().__init__()
@@ -13,37 +16,41 @@ class H5Dataset(Dataset):
         # Load the data from HDF5 files
         with h5py.File(self.gene_matrix_path, 'r') as f:
             self.gene_matrix = f[list(f.keys())[0]][:]  # Load the gene matrix dataset
+            print(f"Gene matrix shape: {self.gene_matrix.shape}")
+
         with h5py.File(self.motif_matrix_path, 'r') as f:
             self.motif_matrix = f[list(f.keys())[0]][:]  # Load the motif matrix dataset
+            print(f"Motif matrix shape: {self.motif_matrix.shape}")
 
-        # Check that the number of output features matches in both matrices
-        assert self.gene_matrix.shape[1] == self.motif_matrix.shape[1], \
-            "Mismatch in number of output features between gene and motif matrices."
+        # Calculate mean and standard deviation along the correct axis (axis=1 for features)
+        self.gene_mean = self.gene_matrix.mean(axis=1)  # Shape (4500,)
+        self.gene_std = self.gene_matrix.std(axis=1)    # Shape (4500,)
+        self.motif_mean = self.motif_matrix.mean(axis=1)  # Shape (541,)
+        self.motif_std = self.motif_matrix.std(axis=1)    # Shape (541,)
 
-        # Calculate mean and standard deviation along the feature dimension (axis=0)
-        self.gene_mean = self.gene_matrix.mean(axis=0)
-        self.gene_std = self.gene_matrix.std(axis=0)
-        self.motif_mean = self.motif_matrix.mean(axis=0)
-        self.motif_std = self.motif_matrix.std(axis=0)
 
     def __len__(self):
-        # The number of samples (output features) is the second dimension of the gene matrix
-        return self.gene_matrix.shape[1]
+        # The number of samples is the first dimension of the gene matrix
+        return self.gene_matrix.shape[0]  # 47936 samples
 
     def __getitem__(self, idx):
-        # Retrieve the feature vectors from both gene and motif matrices for a specific sample
-        gene_features = self.gene_matrix[:, idx]
-        motif_features = self.motif_matrix[:, idx]
+        # Retrieve the feature vectors for the idx-th sample along axis=1
+        gene_features = self.gene_matrix[:, idx]  # Shape (4500,) - Features for the idx-th sample
+        motif_features = self.motif_matrix[:, idx]  # Shape (541,) - Features for the idx-th sample
 
-        # Normalize the features
-        gene_features = (gene_features - self.gene_mean) / (self.gene_std + 1e-8)  # Add a small epsilon to avoid division by zero
-        motif_features = (motif_features - self.motif_mean) / (self.motif_std + 1e-8)
+        # Normalize the gene features across samples (subtract mean and divide by std for each feature)
+        gene_features = (gene_features - self.gene_mean) / (self.gene_std + 1e-8)  # Shape (4500,)
+        
+        # Normalize the motif features similarly, but note the shape is different (541 instead of 4500)
+        motif_features = (motif_features - self.motif_mean) / (self.motif_std + 1e-8)  # Shape (541,)
 
         # Convert to PyTorch tensors
         gene_features = torch.tensor(gene_features, dtype=torch.float32)
         motif_features = torch.tensor(motif_features, dtype=torch.float32)
 
         return gene_features, motif_features
+
+
 
 # Define a function to create a DataLoader with normalization
 def create_dataloader(gene_matrix_path, motif_matrix_path, batch_size, shuffle=True):
@@ -64,7 +71,7 @@ class BaselineNN(BaseModel):
         super(BaselineNN, self).__init__(input_dim, output_dim)
         self.fc1 = nn.Linear(input_dim, 128)
         self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(64, output_dim)
+        self.fc3 = nn.Linear(64, output_dim)  
 
     def forward(self, x):
         x = torch.relu(self.fc1(x))
@@ -94,30 +101,51 @@ class SkipConnectionNN(BaseModel):
         super(SkipConnectionNN, self).__init__(input_dim, output_dim)
         self.fc1 = nn.Linear(input_dim, 128)
         self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(input_dim, output_dim)  # Skip connection goes directly from input to output
+        self.fc3 = nn.Linear(64, output_dim)  # Output layer
+        
+        # Add a linear layer to project the input to the same dimension (64)
+        self.residual_projection = nn.Linear(input_dim, 64)
 
     def forward(self, x):
-        residual = self.fc3(x)  # Skip connection
+        # Project the residual to match the output of fc2
+        residual = self.residual_projection(x)  # Shape (batch_size, 64)
+        
+        # Forward pass through the main branch
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
-        x = x + residual  # Add skip connection
+        
+        # Add the skip connection
+        x = x + residual  # Both tensors now have shape (batch_size, 64)
+        
+        # Final output layer
+        x = self.fc3(x)  # Shape (batch_size, output_dim), where output_dim = 541
         return x
 
-# Define a model with both dropout and skip connections
 class DropoutSkipConnectionNN(BaseModel):
     def __init__(self, input_dim, output_dim, dropout_prob=0.5):
         super(DropoutSkipConnectionNN, self).__init__(input_dim, output_dim)
         self.fc1 = nn.Linear(input_dim, 128)
         self.dropout = nn.Dropout(dropout_prob)
         self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(input_dim, output_dim)  # Skip connection
+        self.fc3 = nn.Linear(64, output_dim)  # Final output layer
+        
+        # Add a projection layer to make residual compatible with the main branch (64 features)
+        self.residual_projection = nn.Linear(input_dim, 64)
 
     def forward(self, x):
-        residual = self.fc3(x)  # Skip connection
+        # Project the input for the skip connection
+        residual = self.residual_projection(x)  # Shape (batch_size, 64)
+        
+        # Forward pass through the main branch
         x = torch.relu(self.fc1(x))
         x = self.dropout(x)
         x = torch.relu(self.fc2(x))
-        x = x + residual  # Add skip connection
+        
+        # Add the skip connection
+        x = x + residual  # Both tensors now have shape (batch_size, 64)
+        
+        # Final output layer
+        x = self.fc3(x)  # Shape (batch_size, output_dim)
         return x
 
 # Training function with loss tracking and saving
@@ -177,10 +205,11 @@ def save_losses_to_json(train_losses, val_losses, model_name, output_dir):
 
 # Main execution: define training parameters and run the training loop for each model
 def main():
+    
     # Hyperparameters
     batch_size = 32
     learning_rate = 0.001
-    epochs = 15
+    epochs = 50
     input_dim = 4500  # Number of input features (genes)
     output_dim = 541  # Number of output features (motifs)
     output_dir = 'model_losses'  # Directory to save the loss files
