@@ -4,10 +4,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # File paths
-gene_matrix_file = 'final_gene_matrix.h5'
-motif_matrix_file = 'final_motif_matrix.h5'
-gene_matrix_threshold_file = gene_matrix_file # the threshold should not matter as it only affects the motif matrix
-motif_matrix_threshold_file = 'final_motif_matrix_thresh_0.2.h5'
+gene_matrix_file = '/home/msai/riemerpi001/data/filtered_seurats/MC3/gene_matrix.h5'
+motif_matrix_file = '/home/msai/riemerpi001/data/filtered_seurats/MC3/motif_matrix.h5'
 
 # PyTorch dtype
 dtype = torch.float32
@@ -92,12 +90,12 @@ print_stats(gene_matrix_np, description="Gene Matrix")
 print_stats(motif_matrix_np, description="Motif Matrix")
 
 # Main execution for threshold data
-gene_matrix_np_thresh, motif_matrix_np_thresh = load_data(gene_matrix_threshold_file, motif_matrix_threshold_file)
-gene_matrix_tensor_thresh, motif_matrix_tensor_thresh = to_tensor(gene_matrix_np_thresh, motif_matrix_np_thresh)
-display_samples(gene_matrix_tensor_thresh, motif_matrix_tensor_thresh)
-plot_motif_distribution(motif_matrix_tensor_thresh, 'motif_matrix_distribution_threshold.2.png')
-plot_averages_and_std(motif_matrix_np_thresh, 'motif_matrix_column_averages_and_std_threshold.2.png')
+# gene_matrix_np_thresh, motif_matrix_np_thresh = load_data(gene_matrix_threshold_file, motif_matrix_threshold_file)
+# gene_matrix_tensor_thresh, motif_matrix_tensor_thresh = to_tensor(gene_matrix_np_thresh, motif_matrix_np_thresh)
+# display_samples(gene_matrix_tensor_thresh, motif_matrix_tensor_thresh)
+# plot_motif_distribution(motif_matrix_tensor_thresh, 'motif_matrix_distribution_threshold.2.png')
+# plot_averages_and_std(motif_matrix_np_thresh, 'motif_matrix_column_averages_and_std_threshold.2.png')
 
-print_stats(gene_matrix_np_thresh, description="Gene Matrix Threshold")
-print_stats(motif_matrix_np_thresh, description="Motif Matrix Threshold")
+# print_stats(gene_matrix_np_thresh, description="Gene Matrix Threshold")
+# print_stats(motif_matrix_np_thresh, description="Motif Matrix Threshold")
 

@@ -5,8 +5,8 @@ import os
 import json
 import h5py
 import torch
-from torch_geometric.data import Data
 import pandas as pd
+from torch_geometric.data import Data
 import time
 from graphModels import GCN, GAT, GATWithDropout, GATWithBatchNorm, ModifiedGCN
 
@@ -23,7 +23,7 @@ def parse_arguments():
     parser.add_argument('--num_layers', nargs='+', type=int, default=2,
                         help='Number of layers.')
     parser.add_argument('--hidden_channels', nargs='+', type=int, default=128,
-                        help='Hidden channels.')
+                        help='hHidden channels.')
     parser.add_argument('--num_epochs', type=int, default=20,
                         help='Number of training epochs.')
     parser.add_argument('--learning_rate', type=float, default=0.001,
@@ -33,11 +33,13 @@ def parse_arguments():
     
     return parser.parse_args()
 
+
 # ============================
 # MODEL INITIALIZATION
 # ============================
 
 def initialize_model(model_name, in_channels, hidden_channels, out_channels, num_layers, heads=1, dropout=0.5):
+    
     """Initialize model based on model name."""
     if model_name == "GCN":
         return GCN(in_channels, hidden_channels, out_channels, num_layers)
@@ -52,73 +54,63 @@ def initialize_model(model_name, in_channels, hidden_channels, out_channels, num
     else:
         raise ValueError(f"Unsupported model name: {model_name}")
 
+def setup_optimizer_and_scheduler(model, learning_rate=0.001, T_max=10):
+    """Set up optimizer and scheduler for further training if needed."""
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=T_max)
+    return optimizer, scheduler
+
 # =========================
 # DATA LOADING FUNCTIONS
 # =========================
 
-def load_full_interaction_graph(interaction_data_file):
-    # Load interaction data
-    interaction_data = pd.read_csv(interaction_data_file, compression='gzip', sep=' ')
+def load_and_create_edge_index(interaction_file):
+    print(f"Loading interaction data from {interaction_file}")
+    interaction_data = pd.read_csv(interaction_file, compression='gzip', sep=' ')
     interaction_data['protein1'] = interaction_data['protein1'].str.replace('9606.', '')
     interaction_data['protein2'] = interaction_data['protein2'].str.replace('9606.', '')
-
-    # Create a unique mapping for nodes
     nodes = pd.concat([interaction_data['protein1'], interaction_data['protein2']]).unique()
     gene_to_index = {gene: idx for idx, gene in enumerate(nodes)}
+    edges = [[gene_to_index[row['protein1']], gene_to_index[row['protein2']]] for _, row in interaction_data.iterrows()]
+    edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
 
-    # Convert edges to index-based format
-    edges = [
-        [gene_to_index[row['protein1']], gene_to_index[row['protein2']]]
-        for _, row in interaction_data.iterrows()
-    ]
-    edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous().to('cuda')
+    num_nodes = len(nodes)
+    num_edges = edge_index.shape[1]
+    edge_density = num_edges / (num_nodes * (num_nodes - 1))
 
-    return edge_index, gene_to_index
+    print(f"Number of nodes: {num_nodes}")
+    print(f"Number of edges: {num_edges}")
+    print(f"Edge density: {edge_density:.4f}")
 
+    return edge_index, num_nodes
+
+import h5py
 
 def get_num_samples_and_output_channels(file_path):
     with h5py.File(file_path, 'r') as f:
+        # Check if the file contains any groups
         if len(f) == 0:
             raise ValueError(f"The HDF5 file at {file_path} contains no groups.")
         
+        # Get the number of samples
         num_samples = len(f)
-        first_sample = list(f.keys())[0]
+        
+        # Get the number of output channels from the 'Y' dataset of the first sample
+        first_sample = list(f.keys())[0]  # Access the first key
         if 'Y' not in f[first_sample]:
             raise KeyError(f"The group '{first_sample}' does not contain a 'Y' dataset.")
         
         output_channels = f[first_sample]['Y'].shape[0]
     return num_samples, output_channels
 
-def subset_edge_index_for_sample(full_edge_index, sample_nodes):
-    # Move full_edge_index to CPU if it's on the GPU
-    full_edge_index = full_edge_index.cpu()
 
-    # Create a mask for edges where both nodes are in `sample_nodes`
-    node_mask = torch.zeros(full_edge_index.max() + 1, dtype=torch.bool)
-    node_mask[sample_nodes] = True
-    mask = node_mask[full_edge_index[0]] & node_mask[full_edge_index[1]]
-    return full_edge_index[:, mask].to('cuda')  # Move the subsetted edge_index to GPU
-
-def load_sample_from_h5(file_path, sample_idx, full_edge_index, gene_to_index):
+def load_sample_from_h5(file_path, sample_idx, edge_index):
     with h5py.File(file_path, 'r') as f:
         sample_group = f[f'sample_{sample_idx}']
-        node_features = torch.tensor(sample_group['X'][:], dtype=torch.float32).to('cuda')
-        motif_matrix = torch.tensor(sample_group['Y'][:], dtype=torch.float32).to('cuda')
-
-        # Determine which nodes are present in this sample based on `X` shape
-        num_nodes_in_sample = node_features.shape[0]
-        sample_nodes = list(gene_to_index.values())[:num_nodes_in_sample]
-        sample_nodes = torch.tensor(sample_nodes, dtype=torch.long)  # Keep sample_nodes on CPU
-
-        # Subset the full edge_index based on sample_nodes
-        edge_index = subset_edge_index_for_sample(full_edge_index, sample_nodes)
-
+        node_features = torch.tensor(sample_group['X'][:], dtype=torch.float32)
+        motif_matrix = torch.tensor(sample_group['Y'][:], dtype=torch.float32)
     return Data(x=node_features, edge_index=edge_index, y=motif_matrix)
 
-
-# =========================
-# NORMALIZATION FUNCTIONS
-# =========================
 
 def compute_normalization_stats(data_list):
     all_node_features = torch.cat([data.x for data in data_list], dim=0)
@@ -129,22 +121,30 @@ def compute_normalization_stats(data_list):
 def normalize_node_features(data_list, mean, std):
     for data in data_list:
         data.x = (data.x - mean) / std
+        # Replace NaN and Inf values with 0
         data.x[torch.isnan(data.x)] = 0
         data.x[torch.isinf(data.x)] = 0
     return data_list
 
 def normalize_motif_matrix(data_list):
+    """Normalize target matrix by scaling values to range [0, 1].
+
+    Returns:
+        data_list (list): List of normalized data samples.
+        baseline (float): Baseline value representing "no change" (fixed at 0.5).
+    """
     baseline = 0.5  # Fixed baseline for [0, 1] range scaling
     for data in data_list:
         data.y = (data.y - data.y.min()) / (data.y.max() - data.y.min())
+        # Replace NaN and Inf values with 0
         data.y[torch.isnan(data.y)] = 0
         data.y[torch.isinf(data.y)] = 0
     return data_list, baseline
 
+
 # =========================
 # TRAINING AND EVALUATION
 # =========================
-
 def train_and_evaluate_model(model, dataloader, val_dataloader, num_epochs, learning_rate, T_max, device, checkpoint_dir, criterion):
     print(f"Using model: {model.__class__.__name__}")
     
@@ -168,13 +168,19 @@ def train_and_evaluate_model(model, dataloader, val_dataloader, num_epochs, lear
             batch = batch.to(device)
             output = model(batch)
             target = batch.y
-
+            
+            # Ensure output and target have the same shape for criterion
             if criterion.__class__.__name__ == "CrossEntropyLoss":
-                output = output.view(-1, output.size(-1))
-                target = target.view(-1).long()
+                # CrossEntropy expects logits of shape (N, C) and target of shape (N)
+                output = output.view(-1, output.size(-1))  # Reshape output to (N, C)
+                target = target.view(-1).long()  # Flatten target to (N) for compatibility
             elif criterion.__class__.__name__ == "MSELoss":
-                target = target.view(output.shape)
+                target = target.view(output.shape)  # Reshape target to match output shape
+            
+            # Print shapes for debugging
+            print(f"Output shape: {output.shape}, Target shape: {target.shape}")
 
+            # Calculate loss
             loss = criterion(output, target)
             loss.backward()
             optimizer.step()
@@ -193,6 +199,7 @@ def train_and_evaluate_model(model, dataloader, val_dataloader, num_epochs, lear
                     output = model(batch)
                     target = batch.y
 
+                    # Adjust shapes for criterion compatibility
                     if criterion.__class__.__name__ == "CrossEntropyLoss":
                         output = output.view(-1, output.size(-1))
                         target = target.view(-1).long()
@@ -207,10 +214,12 @@ def train_and_evaluate_model(model, dataloader, val_dataloader, num_epochs, lear
         end_time = time.time()
         print(f'Epoch {epoch+1}/{num_epochs}, Training Loss: {avg_train_loss:.4f}, Time Taken: {end_time - start_time:.2f} seconds')
         
+        # Calculate and print top-k accuracy
         accuracy = evaluate_top_k_accuracy(output, target, k=10, baseline=0.5)
         accuracies.append(accuracy)
         print(f"Epoch {epoch+1}/{num_epochs}, Top-10 Accuracy: {accuracy:.4f}")
 
+        # Initialize the checkpoint data dictionary
         checkpoint_data = {
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
@@ -229,6 +238,7 @@ def train_and_evaluate_model(model, dataloader, val_dataloader, num_epochs, lear
         if hasattr(model, 'dropout'):
             checkpoint_data['model_config']['dropout'] = model.dropout
 
+        # Save checkpoint at the end of each epoch
         checkpoint_path = os.path.join(checkpoint_dir, f'model_epoch_{epoch+1}.pt')
         torch.save(checkpoint_data, checkpoint_path)
         print(f"Checkpoint saved to {checkpoint_path}")
@@ -240,23 +250,60 @@ def train_and_evaluate_model(model, dataloader, val_dataloader, num_epochs, lear
     return train_losses, val_losses, accuracies
 
 def evaluate_top_k_accuracy(model_output, target, k=10, baseline=1.0):
+    """
+    Evaluate whether the model's top-k predictions match the top-k values in the target
+    based on the distance from a given baseline (default is 1 for no normalization).
+    
+    Args:
+        model_output (torch.Tensor): The output predictions from the model (e.g., shape [541]).
+        target (torch.Tensor): The true motif matrix target values (e.g., shape [541]).
+        k (int): The number of top values to compare (default is 10).
+        baseline (float): The baseline (centroid) value indicating "no change" (default 1.0).
+        
+    Returns:
+        accuracy (float): Proportion of top-k matches between the model output and target.
+    """
+    # Ensure model_output and target are flattened to 1D
     model_output = model_output.flatten()
     target = target.flatten()
 
+    # Calculate the absolute distance from the baseline for both model output and target
     model_distance_from_baseline = torch.abs(model_output - baseline)
     target_distance_from_baseline = torch.abs(target - baseline)
     
+    # Get indices of the top-k furthest values in the model output and target based on distance from baseline
     _, top_k_pred_indices = torch.topk(model_distance_from_baseline, k)
     _, top_k_target_indices = torch.topk(target_distance_from_baseline, k)
     
+    # Convert indices to sets to find matches
     top_k_pred_indices = set(top_k_pred_indices.tolist())
     top_k_target_indices = set(top_k_target_indices.tolist())
     
+    # Calculate the intersection of the indices to see how many match
     matches = len(top_k_pred_indices & top_k_target_indices)
-    accuracy = matches / k
+    accuracy = matches / k  # Calculate the accuracy as a proportion of k
     
     print(f"Top-{k} accuracy based on distance from {baseline}: {accuracy * 100:.2f}%")
     return accuracy
+
+
+def load_model_from_checkpoint(checkpoint_dir, checkpoint_file, model, optimizer=None, scheduler=None):
+    """
+    Load model and optimizer states from a checkpoint file.
+    """
+    checkpoint_path = os.path.join(checkpoint_dir, checkpoint_file)
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(f"No checkpoint found at '{checkpoint_path}'")
+
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    if optimizer:
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    if scheduler:
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    
+    print(f"Loaded model from epoch {checkpoint['epoch']} with checkpoint '{checkpoint_path}'")
+    return model, optimizer, scheduler
 
 global device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

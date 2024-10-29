@@ -126,54 +126,38 @@ class GATWithBatchNorm(torch.nn.Module):
         x = global_mean_pool(x, batch)
         return self.fc(x)
 
+#####################
+# GCN WITH BATCH NORM
+#####################
 
-# =========================
-# GRAPH ISOMORPHISM NETWORK (GIN)
-# =========================
-class GIN(torch.nn.Module):
+class ModifiedGCN(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers=1):
-        super(GIN, self).__init__()
+        super(ModifiedGCN, self).__init__()
         self.in_channels = in_channels
         self.hidden_channels = hidden_channels
         self.out_channels = out_channels
         self.num_layers = num_layers
-        
+        self.input_proj = torch.nn.Linear(in_channels, hidden_channels)  # Linear projection layer
         self.convs = torch.nn.ModuleList()
         self.batch_norms = torch.nn.ModuleList()
-        
-        nn1 = torch.nn.Sequential(
-            torch.nn.Linear(in_channels, hidden_channels),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_channels, hidden_channels)
-        )
-        self.convs.append(GINConv(nn1))
-        self.batch_norms.append(torch.nn.BatchNorm1d(hidden_channels))
-        
-        for _ in range(num_layers - 2):
-            nn_hidden = torch.nn.Sequential(
-                torch.nn.Linear(hidden_channels, hidden_channels),
-                torch.nn.ReLU(),
-                torch.nn.Linear(hidden_channels, hidden_channels)
-            )
-            self.convs.append(GINConv(nn_hidden))
-            self.bastch_norms.append(torch.nn.BatchNorm1d(hidden_channels))
-        
-        nn_final = torch.nn.Sequential(
-            torch.nn.Linear(hidden_channels, hidden_channels),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_channels, hidden_channels)
-        )
-        self.convs.append(GINConv(nn_final))
-        self.batch_norms.append(torch.nn.BatchNorm1d(hidden_channels))
-        
+
+        # Graph Convolutional Layers with Batch Norm
+        for _ in range(num_layers):
+            self.convs.append(GCNConv(hidden_channels, hidden_channels))
+            self.batch_norms.append(torch.nn.BatchNorm1d(hidden_channels))
+
         self.fc = torch.nn.Linear(hidden_channels, out_channels)
 
     def forward(self, data):
         x, edge_index, batch = data.x, data.edge_index, data.batch
-        for i, (conv, batch_norm) in enumerate(zip(self.convs, self.batch_norms)):
+        x = self.input_proj(x)  # Reduce dimensionality
+
+        for conv, batch_norm in zip(self.convs, self.batch_norms):
+            residual = x  # Save for residual connection
             x = conv(x, edge_index)
             x = batch_norm(x)
             x = F.relu(x)
-        x = global_mean_pool(x, batch)
-        return self.fc(x)
+            x = x + residual  # Residual connection
 
+        x = global_mean_pool(x, batch)
+        return torch.sigmoid(self.fc(x))

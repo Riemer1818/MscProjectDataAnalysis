@@ -1,46 +1,42 @@
 import h5py
 import torch
 import torch_geometric as tg
-import pandas as pd
-import os
-import numpy as np
 import gc
+import pandas as pd
+import numpy as np
 import argparse
 from torch_geometric.data import Data
 
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Process gene and motif data to create a graph dataset.")
-    parser.add_argument("--threshold", type=float, default=0.001, help="Threshold for binning weak edges.")
-    parser.add_argument("--num_bins", type=int, default=50, help="Number of bins for edge weight binning.")
-    parser.add_argument("--hdf5_gene_matrix_file", type=str, required=True, help="Path to HDF5 file with gene matrix.")
-    parser.add_argument("--motif_matrix_file", type=str, required=True, help="Path to HDF5 file with motif matrix.")
-    parser.add_argument("--ensembl_gene_file", type=str, required=True, help="Path to Ensembl gene mapping CSV file.")
-    parser.add_argument("--output_hdf5_file", type=str, required=True, help="Path to output HDF5 file.")
-    parser.add_argument("--interaction_data_file", type=str, required=True, help="Path to interaction data file (gzip).")
-    parser.add_argument("--num_samples", type=int, default=None, help="Number of samples to process.")
-    args = parser.parse_args()
-    return args
+# def parse_arguments():
+#     parser = argparse.ArgumentParser(description="Process gene and motif data to create a graph dataset.")
+#     parser.add_argument("--threshold", type=float, default=0.001, help="Threshold for binning weak edges.")
+#     parser.add_argument("--num_bins", type=int, default=50, help="Number of bins for edge weight binning.")
+#     parser.add_argument("--hdf5_gene_matrix_file", type=str, required=True, help="Path to HDF5 file with gene matrix.")
+#     parser.add_argument("--motif_matrix_file", type=str, required=True, help="Path to HDF5 file with motif matrix.")
+#     parser.add_argument("--ensembl_gene_file", type=str, required=True, help="Path to Ensembl gene mapping CSV file.")
+#     parser.add_argument("--output_hdf5_file", type=str, required=True, help="Path to output HDF5 file.")
+#     parser.add_argument("--interaction_data_file", type=str, required=True, help="Path to interaction data file (gzip).")
+#     parser.add_argument("--num_samples", type=int, default=None, help="Number of samples to process.")
+#     args = parser.parse_args()
+#     return args
 
 def main():
     # Parse command-line arguments
-    args = parse_arguments()
+    # args = parse_arguments()
 
     # ======================
     # CONFIGURATION
     # ======================
 
     # Set parameters from arguments
-    THRESHOLD = args.threshold
-    NUM_BINS = args.num_bins
-    HDF5_GENE_MATRIX_FILE = args.hdf5_gene_matrix_file
-    MOTIF_MATRIX_FILE = args.motif_matrix_file
-    ENSEMBL_GENE_FILE = args.ensembl_gene_file
-    OUTPUT_HDF5_FILE = args.output_hdf5_file
-    INTERACTION_DATA_FILE = args.interaction_data_file
-    NUM_SAMPLES = args.num_samples
-
-    # Check if GPU is available
-    USE_GPU = torch.cuda.is_available()
+    NUM_SAMPLES = None
+    THRESHOLD = 0.5
+    NUM_BINS = 50
+    HDF5_GENE_MATRIX_FILE = "/home/msai/riemerpi001/data/filtered_seurats/MC3/processed_data/gene_matrix.h5"
+    MOTIF_MATRIX_FILE = "/home/msai/riemerpi001/data/filtered_seurats/MC3/processed_data/motif_matrix.h5"
+    ENSEMBL_GENE_FILE = "/home/msai/riemerpi001/data/filtered_seurats/MC3/ensembl_protein_ids_cleaned.csv"
+    OUTPUT_HDF5_FILE = "/home/msai/riemerpi001/data/filtered_seurats/MC3/processed_data/graphsFile.h5"
+    INTERACTION_DATA_FILE = "/home/msai/riemerpi001/9606.protein.physical.links.v12.0.txt.gz"
 
     # Step 1: Load gene data
     ensembl_gene_df = pd.read_csv(ENSEMBL_GENE_FILE)
@@ -52,57 +48,62 @@ def main():
     interaction_data['protein1'] = interaction_data['protein1'].str.replace('9606.', '')
     interaction_data['protein2'] = interaction_data['protein2'].str.replace('9606.', '')
 
-    # Define binning function for edge weights
+    # Filter edges based on threshold and binning
     def bin_weight(weight, num_bins=10):
         """Bin the weight into discrete bins."""
         return np.round(weight * num_bins) / num_bins
 
-    # Apply binning to edge weights and remove edges below the threshold
     interaction_data['weight_binned'] = interaction_data['combined_score'].apply(lambda x: bin_weight(x / 1000, NUM_BINS))
     binned_interactions = interaction_data[interaction_data['weight_binned'] >= THRESHOLD]
 
-    # Expand the node mapping to include all unique proteins in interaction data
-    all_proteins = set(interaction_data['protein1']).union(set(interaction_data['protein2']))
+    # Limit the number of edges per node to reduce graph density
+    top_k_edges = binned_interactions.groupby('protein1').apply(lambda df: df.nlargest(20, 'weight_binned')).reset_index(drop=True)
+    
+    # Update node mapping to include only connected nodes
+    all_proteins = set(top_k_edges['protein1']).union(set(top_k_edges['protein2']))
     node_mapping = {protein: idx for idx, protein in enumerate(all_proteins)}
 
-    # Print the number of nodes in the final node mapping
-    print(f"Total number of nodes in the expanded node mapping: {len(node_mapping)}")
-
-    # Rebuild the edge list
+    # Rebuild the edge list using pruned interactions
     edges = []
-    for _, row in binned_interactions.iterrows():
+    for _, row in top_k_edges.iterrows():
         if row['protein1'] in node_mapping and row['protein2'] in node_mapping:
             edges.append([node_mapping[row['protein1']], node_mapping[row['protein2']]])
 
-    # Create the final edge tensor
-    edges = torch.tensor(edges).t().contiguous()
+    # Create the final edge tensor as a sparse representation
+    edges = torch.tensor(edges, dtype=torch.long).t().contiguous()
     graph_data = Data(edge_index=edges)
 
-    # Step 3: Load the gene expression matrix (X) and motif matrix (Y)
+    # Load gene expression matrix and motif matrix with dimensionality reduction
     with h5py.File(HDF5_GENE_MATRIX_FILE, 'r') as f:
-        gene_matrix_np = f['gene_matrix'][:].T  # X: Gene expression data
+        gene_matrix_np = f['gene_matrix'][:].T
 
     with h5py.File(MOTIF_MATRIX_FILE, 'r') as f:
-        motif_matrix_np = f['motif_matrix'][:].T # Y: Motif matrix data
+        motif_matrix_np = f['motif_matrix'][:].T
 
+    # Apply dimensionality reduction (e.g., PCA)
+    # from sklearn.decomposition import PCA
+    # pca = PCA(n_components=100)  # Reduce to 100 dimensions
+    # gene_matrix_np = pca.fit_transform(gene_matrix_np)
+
+    # Use GPU if available
+    device = torch.device('cpu') # could actually be run on GPU 
+    graph_data = graph_data.to(device)
+
+    
     print(f"Gene matrix shape: {gene_matrix_np.shape}")
     print(f"Motif matrix shape: {motif_matrix_np.shape}")
 
     # Determine the number of samples to process
     num_total_samples = gene_matrix_np.shape[0]
     samples_to_process = num_total_samples if NUM_SAMPLES is None else min(NUM_SAMPLES, num_total_samples)
-
-    # Use GPU if available
-    device = torch.device('cuda' if USE_GPU else 'cpu')
-    graph_data = graph_data.to(device)
-
+    
     # Precompute gene index map
     gene_index_map = {hgnc_symbol: idx for idx, hgnc_symbol in enumerate(ensembl_gene_dict.keys())}
 
     # Step 4: Process each sample and save X and Y into a single HDF5 file
     with h5py.File(OUTPUT_HDF5_FILE, 'w') as hdf_out:
         for sample_idx in range(samples_to_process):
-            print(f"Processing sample {sample_idx + 1}...")
+            # print(f"Processing sample {sample_idx + 1}...")
             
             # Initialize node feature tensor
             node_features = torch.zeros((len(node_mapping), 1), device=device)
@@ -136,7 +137,8 @@ def main():
             del node_features_np, motif_data_np
             gc.collect()
 
-            print(f"Sample {sample_idx + 1} saved.")
+            if (sample_idx + 1) % 100 == 0:
+                print(f"Sample {sample_idx + 1} saved.")
 
 if __name__ == "__main__":
     main()

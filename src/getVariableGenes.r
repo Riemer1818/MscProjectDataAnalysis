@@ -64,10 +64,10 @@ process_and_extract_variable_genes <- function(mc_folder, output_dir, nfeatures 
     saveRDS(all_variable_genes, file = output_file)
 }
 
-# Example usage
+# Assign arguments to variables
 mc_folder <- "~/data/filtered_seurats/MC3"
-output_dir <- "~/data/filtered_seurats/data/output_variable_genesM3"
+output_dir <- "~/data/filtered_seurats/MC3" 
 nfeatures <- 4500
 
-# Call the main function
+# Call the main function with the provided arguments
 process_and_extract_variable_genes(mc_folder, output_dir, nfeatures)

@@ -75,10 +75,10 @@ process_gene_list <- function(gene_list_path, output_file_path, output_log_path,
     cat("Process completed successfully.\n")
 }
 
-# Example usage
-gene_list_path <- "/home/msai/riemerpi001/data/all_variable_genes.rds"
-output_file_path <- "/home/msai/riemerpi001/data/ensembl_protein_ids_cleaned.csv"
-output_log_path <- "/home/msai/riemerpi001/data/ensembl_protein_ids_stats.log"
+# Assign arguments to variables
+gene_list_path <- "~/data/filtered_seurats/MC3/all_variable_genes.rds"
+output_file_path <- "~/data/filtered_seurats/MC3/ensembl_protein_ids_cleaned.csv" 
+output_log_path <- "~/data/filtered_seurats/MC3/ensembl_protein_ids_stats.log"
 
-# Call the main function
+# Call the main function with the provided arguments
 process_gene_list(gene_list_path, output_file_path, output_log_path)

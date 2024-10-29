@@ -39,10 +39,6 @@ process_rds_files <- function(rds_folder, output_dir_base, cell_type_distributio
         # Extract the basename of the file without extension
         input_file_base <- file_path_sans_ext(basename(file_path))
         
-        # Define the output directory for the current RDS file
-        output_dir <- file.path(output_dir_base, input_file_base)
-        create_output_directory(output_dir)
-        
         # Load the multiomic data
         cat("Loading multiomic data from:", file_path, "\n")
         multiomic_data <- readRDS(file = file_path)
@@ -107,9 +103,9 @@ process_rds_files <- function(rds_folder, output_dir_base, cell_type_distributio
         # Append the current distribution to the combined dataframe
         combined_cell_type_distribution <- rbind(combined_cell_type_distribution, cell_type_distribution_df)
         
-        # Define output file path
+        # Define output file path in the top-level output directory
         output_file <- paste0(input_file_base, "_MC.rds")
-        full_output_path <- file.path(output_dir, output_file)
+        full_output_path <- file.path(output_dir_base, output_file)
         
         # Print the full output path to confirm the file location
         cat("Saving Seurat object to:", full_output_path, "\n")
@@ -135,11 +131,10 @@ process_rds_files <- function(rds_folder, output_dir_base, cell_type_distributio
     cat("Saved combined cell type distribution to:", cell_type_distribution_file, "\n")
 }
 
-# Example usage
+# Example usage of the process_rds_files function
 rds_folder <- "~/data/filtered_seurats/originalRDS"
-output_dir_base <- "~/data/filtered_seurats/MC3"
-cell_type_distribution_file <- "~/ combined_cell_type_distribution_MC#_gamma40.csv"
+output_dir_base <- "~/data/filtered_seurats/MC3" 
+cell_type_distribution_file <- "~/data/filtered_seurats/combinedCellDistribution.csv" 
 gamma <- 40
 
-# Call the function
 process_rds_files(rds_folder, output_dir_base, cell_type_distribution_file, gamma)
