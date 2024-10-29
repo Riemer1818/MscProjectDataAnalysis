@@ -18,15 +18,15 @@ conda activate base
 echo "Running GCNs"
 python ~/MscProjectDataAnalysis/src/runGraphmodels.py --model GCN --num_epochs 10 --learning_rate 0.001 --batch_size 8
 
-# echo "Running GATs"
-# python ~/MscProjectDataAnalysis/src/runGraphModels.py --model GAT--num_epochs 10 --learning_rate 0.001 --batch_size 16
+echo "Running GATs"
+python ~/MscProjectDataAnalysis/src/runGraphModels.py --model GAT--num_epochs 10 --learning_rate 0.001 --batch_size 16
 
-# echo "Running GATWithDropout"
-# python ~/MscProjectDataAnalysis/src/runGraphModels.py --model GATWithDropout --num_epochs 10 --learning_rate 0.001 --batch_size 16
+echo "Running GATWithDropout"
+python ~/MscProjectDataAnalysis/src/runGraphModels.py --model GATWithDropout --num_epochs 10 --learning_rate 0.001 --batch_size 16
 
-# echo "Running GATWithBatchNorm"
-# python ~/MscProjectDataAnalysis/src/runGraphModels.py --model GATWithBatchNorm --num_epochs 10 --learning_rate 0.001 --batch_size 16
+echo "Running GATWithBatchNorm"
+python ~/MscProjectDataAnalysis/src/runGraphModels.py --model GATWithBatchNorm --num_epochs 10 --learning_rate 0.001 --batch_size 16
 
-# echo "Running ModifiedGCN"
-# python ~/MscProjectDataAnalysis/src/runGraphModels.py --model ModifiedGCN --num_epochs 10 --learning_rate 0.001 --batch_size 16
+echo "Running ModifiedGCN"
+python ~/MscProjectDataAnalysis/src/runGraphModels.py --model ModifiedGCN --num_epochs 10 --learning_rate 0.001 --batch_size 16
 
