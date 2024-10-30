@@ -35,7 +35,7 @@ def main():
     HDF5_GENE_MATRIX_FILE = "/home/msai/riemerpi001/data/filtered_seurats/MC3/processed_data/gene_matrix.h5"
     MOTIF_MATRIX_FILE = "/home/msai/riemerpi001/data/filtered_seurats/MC3/processed_data/motif_matrix.h5"
     ENSEMBL_GENE_FILE = "/home/msai/riemerpi001/data/filtered_seurats/MC3/ensembl_protein_ids_cleaned.csv"
-    OUTPUT_HDF5_FILE = "/home/msai/riemerpi001/data/filtered_seurats/MC3/processed_data/graphsFile.h5"
+    OUTPUT_HDF5_FILE = "/home/msai/riemerpi001/data/filtered_seurats/MC3/processed_data/graphsFile_reduced.h5"
     INTERACTION_DATA_FILE = "/home/msai/riemerpi001/9606.protein.physical.links.v12.0.txt.gz"
 
     # Step 1: Load gene data

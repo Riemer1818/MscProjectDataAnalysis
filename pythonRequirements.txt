@@ -1,0 +1,12 @@
+numpy
+pandas
+matplotlib
+scipy
+seaborn
+networkx
+scikit-learn
+torch
+anndata
+scanpy
+ipython
+notebook

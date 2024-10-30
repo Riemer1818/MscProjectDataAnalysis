@@ -17,7 +17,7 @@ from graphModelFunctions import (
     normalize_motif_matrix,
     train_and_evaluate_model,   
     initialize_model,
-    load_full_interaction_graph  # Make sure this is defined in graphModelFunctions2
+    load_full_interaction_graph 
 )
 
 from graphModels import GCN, GAT, GATWithDropout, GATWithBatchNorm, ModifiedGCN
